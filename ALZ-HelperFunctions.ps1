@@ -465,10 +465,12 @@ function Show-Menu {
     Write-Host "  3. Show Policy Assignments" -ForegroundColor White
     Write-Host "  4. Show Policy Compliance" -ForegroundColor White
     Write-Host "  5. List Subscriptions" -ForegroundColor White
-    Write-Host "  6. Run Deployment Script" -ForegroundColor White
+    Write-Host "  6. Show EA Enrollment Account (for subscription creation)" -ForegroundColor White
     Write-Host ""
-    Write-Host "  7. Remove Policy Assignments (WhatIf)" -ForegroundColor Yellow
-    Write-Host "  8. Remove Management Group Hierarchy (WhatIf)" -ForegroundColor Yellow
+    Write-Host "  7. Run Deployment Script" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  8. Remove Policy Assignments (WhatIf)" -ForegroundColor Yellow
+    Write-Host "  9. Remove Management Group Hierarchy (WhatIf)" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "  Q. Quit" -ForegroundColor Gray
     Write-Host ""
@@ -513,17 +515,30 @@ function Start-InteractiveMenu {
                 Read-Host "`nPress Enter to continue"
             }
             '6' {
-                & "$PSScriptRoot\Deploy-AzureLandingZone.ps1"
+                Show-EAEnrollmentAccount
                 Read-Host "`nPress Enter to continue"
             }
             '7' {
+                Write-Host "`nRunning deployment script..." -ForegroundColor Cyan
+                Write-Host "─────────────────────────────────────────────────────────────────`n" -ForegroundColor DarkGray
+                try {
+                    & "$PSScriptRoot\Deploy-AzureLandingZone.ps1"
+                }
+                catch {
+                    Write-Host "`nDeployment encountered an error: $_" -ForegroundColor Red
+                }
+                Write-Host "`n─────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
+                Write-Host "Deployment script finished." -ForegroundColor Cyan
+                Read-Host "`nPress Enter to return to menu"
+            }
+            '8' {
                 $mgName = Read-Host "Enter Management Group name"
                 if ($mgName) {
                     Remove-PolicyAssignments -ManagementGroupName $mgName -WhatIf
                 }
                 Read-Host "`nPress Enter to continue"
             }
-            '8' {
+            '9' {
                 $mgName = Read-Host "Enter root Management Group name to remove"
                 if ($mgName) {
                     Remove-ManagementGroupHierarchy -RootGroupName $mgName -WhatIf
@@ -532,6 +547,8 @@ function Start-InteractiveMenu {
             }
         }
     } while ($selection -ne 'Q' -and $selection -ne 'q')
+    
+    Write-Host "`nGoodbye!" -ForegroundColor Green
 }
 
 #endregion
