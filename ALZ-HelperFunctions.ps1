@@ -564,3 +564,7 @@ Write-Host "  Show-PolicyCompliance          - Check compliance status" -Foregro
 Write-Host "  Show-Subscriptions             - List all subscriptions" -ForegroundColor White
 Write-Host "  Show-EAEnrollmentAccount       - Get EA billing scope for subscription creation" -ForegroundColor Yellow
 Write-Host ""
+Write-Host "Cleanup commands (use with caution):" -ForegroundColor Red
+Write-Host "  Remove-PolicyAssignments       - Remove policies from a MG (use -WhatIf first)" -ForegroundColor Yellow
+Write-Host "  Remove-ManagementGroupHierarchy - Remove MG and all children (use -WhatIf first)" -ForegroundColor Yellow
+Write-Host ""
