@@ -1,0 +1,435 @@
+<#
+.SYNOPSIS
+    Helper functions for Azure Landing Zone management.
+
+.DESCRIPTION
+    This script provides utility functions for:
+    - Viewing the current Management Group hierarchy
+    - Checking policy compliance
+    - Listing subscriptions and their assignments
+    - Cleanup operations
+
+.NOTES
+    Version: 1.0
+    Requires: Az.Accounts, Az.Resources modules
+#>
+
+#region ==================== PREREQUISITE CHECK ====================
+
+function Test-Prerequisites {
+    Write-Host "Checking prerequisites..." -ForegroundColor Cyan
+    
+    # Check Az modules
+    $requiredModules = @("Az.Accounts", "Az.Resources")
+    $missingModules = @()
+    
+    foreach ($module in $requiredModules) {
+        if (-not (Get-Module -ListAvailable -Name $module)) {
+            $missingModules += $module
+        }
+    }
+    
+    if ($missingModules.Count -gt 0) {
+        Write-Host "Missing required modules: $($missingModules -join ', ')" -ForegroundColor Red
+        Write-Host "Install them using: Install-Module -Name <ModuleName> -Scope CurrentUser" -ForegroundColor Yellow
+        return $false
+    }
+    
+    # Check Azure connection
+    $context = Get-AzContext
+    if (-not $context) {
+        Write-Host "Not connected to Azure. Run 'Connect-AzAccount' first." -ForegroundColor Red
+        return $false
+    }
+    
+    Write-Host "Prerequisites check passed." -ForegroundColor Green
+    Write-Host "Connected as: $($context.Account.Id)" -ForegroundColor Gray
+    Write-Host "Tenant: $($context.Tenant.Id)" -ForegroundColor Gray
+    return $true
+}
+
+#endregion
+
+#region ==================== VIEWING FUNCTIONS ====================
+
+function Show-ManagementGroupHierarchy {
+    <#
+    .SYNOPSIS
+        Displays the Management Group hierarchy in a tree format.
+    
+    .PARAMETER RootGroupName
+        Optional. The name of the root management group to start from.
+    #>
+    param(
+        [string]$RootGroupName = ""
+    )
+    
+    Write-Host "`n╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host "║              MANAGEMENT GROUP HIERARCHY                          ║" -ForegroundColor Cyan
+    Write-Host "╚══════════════════════════════════════════════════════════════════╝`n" -ForegroundColor Cyan
+    
+    function Get-MGChildren {
+        param(
+            [string]$ParentId,
+            [int]$Level = 0
+        )
+        
+        $indent = "  " * $Level
+        $children = Get-AzManagementGroup | Where-Object { 
+            $_.ParentId -eq $ParentId -or 
+            $_.ParentDisplayName -eq $ParentId -or
+            $_.ParentName -eq $ParentId
+        }
+        
+        foreach ($child in $children) {
+            $icon = if ($Level -eq 0) { "📁" } else { "├── 📂" }
+            Write-Host "$indent$icon $($child.DisplayName) [$($child.Name)]" -ForegroundColor White
+            
+            # Get subscriptions under this MG
+            try {
+                $subs = Get-AzManagementGroupSubscription -GroupName $child.Name -ErrorAction SilentlyContinue
+                foreach ($sub in $subs) {
+                    Write-Host "$indent    └── 🔑 $($sub.DisplayName)" -ForegroundColor Yellow
+                }
+            }
+            catch {}
+            
+            Get-MGChildren -ParentId $child.Id -Level ($Level + 1)
+        }
+    }
+    
+    # Get tenant root
+    $tenantRoot = Get-AzManagementGroup | Where-Object { $_.ParentId -eq $null }
+    
+    if ($RootGroupName) {
+        $startMG = Get-AzManagementGroup -GroupName $RootGroupName -ErrorAction SilentlyContinue
+        if ($startMG) {
+            Write-Host "📁 $($startMG.DisplayName) [$($startMG.Name)]" -ForegroundColor Cyan
+            Get-MGChildren -ParentId $startMG.Id -Level 1
+        }
+        else {
+            Write-Host "Management Group '$RootGroupName' not found." -ForegroundColor Red
+        }
+    }
+    else {
+        Write-Host "📁 Tenant Root Group" -ForegroundColor Cyan
+        Get-MGChildren -ParentId $tenantRoot.Id -Level 1
+    }
+    
+    Write-Host ""
+}
+
+function Show-PolicyAssignments {
+    <#
+    .SYNOPSIS
+        Lists all policy assignments at Management Group scope.
+    
+    .PARAMETER ManagementGroupName
+        The name of the management group to check.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ManagementGroupName
+    )
+    
+    Write-Host "`n╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host "║              POLICY ASSIGNMENTS                                  ║" -ForegroundColor Cyan
+    Write-Host "╚══════════════════════════════════════════════════════════════════╝`n" -ForegroundColor Cyan
+    
+    $scope = "/providers/Microsoft.Management/managementGroups/$ManagementGroupName"
+    
+    try {
+        $assignments = Get-AzPolicyAssignment -Scope $scope -ErrorAction Stop
+        
+        if ($assignments.Count -eq 0) {
+            Write-Host "No policy assignments found at scope: $ManagementGroupName" -ForegroundColor Yellow
+            return
+        }
+        
+        Write-Host "Management Group: $ManagementGroupName" -ForegroundColor White
+        Write-Host "Total Assignments: $($assignments.Count)`n" -ForegroundColor Gray
+        
+        foreach ($assignment in $assignments) {
+            Write-Host "  📋 $($assignment.Properties.DisplayName)" -ForegroundColor Green
+            Write-Host "     Name: $($assignment.Name)" -ForegroundColor Gray
+            Write-Host "     Policy: $($assignment.Properties.PolicyDefinitionId.Split('/')[-1])" -ForegroundColor Gray
+            Write-Host ""
+        }
+    }
+    catch {
+        Write-Host "Error retrieving policy assignments: $_" -ForegroundColor Red
+    }
+}
+
+function Show-PolicyCompliance {
+    <#
+    .SYNOPSIS
+        Shows policy compliance summary for a Management Group.
+    
+    .PARAMETER ManagementGroupName
+        The name of the management group to check.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ManagementGroupName
+    )
+    
+    Write-Host "`n╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host "║              POLICY COMPLIANCE SUMMARY                           ║" -ForegroundColor Cyan
+    Write-Host "╚══════════════════════════════════════════════════════════════════╝`n" -ForegroundColor Cyan
+    
+    $scope = "/providers/Microsoft.Management/managementGroups/$ManagementGroupName"
+    
+    try {
+        $complianceStates = Get-AzPolicyState -ManagementGroupName $ManagementGroupName -Filter "ComplianceState eq 'NonCompliant'" -Top 100 -ErrorAction Stop
+        
+        if ($complianceStates.Count -eq 0) {
+            Write-Host "✅ All resources are compliant!" -ForegroundColor Green
+            return
+        }
+        
+        Write-Host "⚠️  Non-Compliant Resources Found: $($complianceStates.Count)`n" -ForegroundColor Yellow
+        
+        # Group by policy
+        $grouped = $complianceStates | Group-Object -Property PolicyDefinitionName
+        
+        foreach ($group in $grouped) {
+            Write-Host "  Policy: $($group.Name)" -ForegroundColor Red
+            Write-Host "  Non-Compliant Count: $($group.Count)" -ForegroundColor Gray
+            Write-Host ""
+        }
+    }
+    catch {
+        Write-Host "Error retrieving compliance data: $_" -ForegroundColor Red
+        Write-Host "Note: Compliance data may take up to 24 hours to populate after policy assignment." -ForegroundColor Yellow
+    }
+}
+
+function Show-Subscriptions {
+    <#
+    .SYNOPSIS
+        Lists all subscriptions and their Management Group assignments.
+    #>
+    
+    Write-Host "`n╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host "║              SUBSCRIPTION LIST                                   ║" -ForegroundColor Cyan
+    Write-Host "╚══════════════════════════════════════════════════════════════════╝`n" -ForegroundColor Cyan
+    
+    $subscriptions = Get-AzSubscription
+    
+    Write-Host "Found $($subscriptions.Count) subscriptions:`n" -ForegroundColor White
+    
+    foreach ($sub in $subscriptions) {
+        $state = if ($sub.State -eq "Enabled") { "✅" } else { "⚠️" }
+        Write-Host "  $state $($sub.Name)" -ForegroundColor White
+        Write-Host "     ID: $($sub.Id)" -ForegroundColor Gray
+        Write-Host "     State: $($sub.State)" -ForegroundColor Gray
+        Write-Host ""
+    }
+}
+
+#endregion
+
+#region ==================== CLEANUP FUNCTIONS ====================
+
+function Remove-PolicyAssignments {
+    <#
+    .SYNOPSIS
+        Removes all policy assignments from a Management Group.
+    
+    .PARAMETER ManagementGroupName
+        The name of the management group.
+    
+    .PARAMETER WhatIf
+        Shows what would be removed without actually removing.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ManagementGroupName,
+        
+        [switch]$WhatIf
+    )
+    
+    $scope = "/providers/Microsoft.Management/managementGroups/$ManagementGroupName"
+    $assignments = Get-AzPolicyAssignment -Scope $scope
+    
+    if ($assignments.Count -eq 0) {
+        Write-Host "No policy assignments found." -ForegroundColor Yellow
+        return
+    }
+    
+    Write-Host "Found $($assignments.Count) policy assignments.`n" -ForegroundColor White
+    
+    foreach ($assignment in $assignments) {
+        if ($WhatIf) {
+            Write-Host "[WhatIf] Would remove: $($assignment.Properties.DisplayName)" -ForegroundColor Yellow
+        }
+        else {
+            Write-Host "Removing: $($assignment.Properties.DisplayName)..." -ForegroundColor Cyan
+            Remove-AzPolicyAssignment -Name $assignment.Name -Scope $scope -ErrorAction SilentlyContinue
+            Write-Host "  Removed." -ForegroundColor Green
+        }
+    }
+}
+
+function Remove-ManagementGroupHierarchy {
+    <#
+    .SYNOPSIS
+        Removes a Management Group and all its children.
+        WARNING: This is destructive! Use with caution.
+    
+    .PARAMETER RootGroupName
+        The name of the root management group to remove.
+    
+    .PARAMETER WhatIf
+        Shows what would be removed without actually removing.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RootGroupName,
+        
+        [switch]$WhatIf
+    )
+    
+    Write-Host "`n⚠️  WARNING: This will remove the Management Group and all its children!" -ForegroundColor Red
+    
+    if (-not $WhatIf) {
+        $confirm = Read-Host "Type 'DELETE' to confirm"
+        if ($confirm -ne "DELETE") {
+            Write-Host "Cancelled." -ForegroundColor Yellow
+            return
+        }
+    }
+    
+    function Remove-MGRecursive {
+        param(
+            [string]$GroupName
+        )
+        
+        # Get children first
+        $mg = Get-AzManagementGroup -GroupName $GroupName -Expand -ErrorAction SilentlyContinue
+        
+        if (-not $mg) {
+            return
+        }
+        
+        # Remove children recursively
+        foreach ($child in $mg.Children) {
+            if ($child.Type -eq "/providers/Microsoft.Management/managementGroups") {
+                Remove-MGRecursive -GroupName $child.Name
+            }
+        }
+        
+        # Remove policy assignments first
+        Remove-PolicyAssignments -ManagementGroupName $GroupName -WhatIf:$WhatIf
+        
+        # Remove the MG
+        if ($WhatIf) {
+            Write-Host "[WhatIf] Would remove MG: $GroupName" -ForegroundColor Yellow
+        }
+        else {
+            Write-Host "Removing MG: $GroupName..." -ForegroundColor Cyan
+            Remove-AzManagementGroup -GroupName $GroupName -ErrorAction SilentlyContinue
+            Write-Host "  Removed." -ForegroundColor Green
+        }
+    }
+    
+    Remove-MGRecursive -GroupName $RootGroupName
+}
+
+#endregion
+
+#region ==================== INTERACTIVE MENU ====================
+
+function Show-Menu {
+    Clear-Host
+    Write-Host "╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host "║         AZURE LANDING ZONE MANAGEMENT UTILITIES                  ║" -ForegroundColor Cyan
+    Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  1. Check Prerequisites" -ForegroundColor White
+    Write-Host "  2. Show Management Group Hierarchy" -ForegroundColor White
+    Write-Host "  3. Show Policy Assignments" -ForegroundColor White
+    Write-Host "  4. Show Policy Compliance" -ForegroundColor White
+    Write-Host "  5. List Subscriptions" -ForegroundColor White
+    Write-Host "  6. Run Deployment Script" -ForegroundColor White
+    Write-Host ""
+    Write-Host "  7. Remove Policy Assignments (WhatIf)" -ForegroundColor Yellow
+    Write-Host "  8. Remove Management Group Hierarchy (WhatIf)" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  Q. Quit" -ForegroundColor Gray
+    Write-Host ""
+}
+
+function Start-InteractiveMenu {
+    do {
+        Show-Menu
+        $selection = Read-Host "Select an option"
+        
+        switch ($selection) {
+            '1' {
+                Test-Prerequisites
+                Read-Host "`nPress Enter to continue"
+            }
+            '2' {
+                $mgName = Read-Host "Enter Management Group name (or press Enter for all)"
+                if ($mgName) {
+                    Show-ManagementGroupHierarchy -RootGroupName $mgName
+                }
+                else {
+                    Show-ManagementGroupHierarchy
+                }
+                Read-Host "`nPress Enter to continue"
+            }
+            '3' {
+                $mgName = Read-Host "Enter Management Group name"
+                if ($mgName) {
+                    Show-PolicyAssignments -ManagementGroupName $mgName
+                }
+                Read-Host "`nPress Enter to continue"
+            }
+            '4' {
+                $mgName = Read-Host "Enter Management Group name"
+                if ($mgName) {
+                    Show-PolicyCompliance -ManagementGroupName $mgName
+                }
+                Read-Host "`nPress Enter to continue"
+            }
+            '5' {
+                Show-Subscriptions
+                Read-Host "`nPress Enter to continue"
+            }
+            '6' {
+                & "$PSScriptRoot\Deploy-AzureLandingZone.ps1"
+                Read-Host "`nPress Enter to continue"
+            }
+            '7' {
+                $mgName = Read-Host "Enter Management Group name"
+                if ($mgName) {
+                    Remove-PolicyAssignments -ManagementGroupName $mgName -WhatIf
+                }
+                Read-Host "`nPress Enter to continue"
+            }
+            '8' {
+                $mgName = Read-Host "Enter root Management Group name to remove"
+                if ($mgName) {
+                    Remove-ManagementGroupHierarchy -RootGroupName $mgName -WhatIf
+                }
+                Read-Host "`nPress Enter to continue"
+            }
+        }
+    } while ($selection -ne 'Q' -and $selection -ne 'q')
+}
+
+#endregion
+
+# Show usage info
+Write-Host "`nAzure Landing Zone Helper Functions Loaded" -ForegroundColor Green
+Write-Host "Available commands:" -ForegroundColor Cyan
+Write-Host "  Start-InteractiveMenu          - Launch interactive menu" -ForegroundColor White
+Write-Host "  Test-Prerequisites             - Check Azure connection and modules" -ForegroundColor White
+Write-Host "  Show-ManagementGroupHierarchy  - Display MG tree" -ForegroundColor White
+Write-Host "  Show-PolicyAssignments         - List policies at MG scope" -ForegroundColor White
+Write-Host "  Show-PolicyCompliance          - Check compliance status" -ForegroundColor White
+Write-Host "  Show-Subscriptions             - List all subscriptions" -ForegroundColor White
+Write-Host ""
