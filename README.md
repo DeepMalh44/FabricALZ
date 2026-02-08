@@ -235,7 +235,7 @@ Load the helper functions:
 ### Available Commands
 
 ```powershell
-# Launch interactive menu
+# Launch interactive menu (9 options)
 Start-InteractiveMenu
 
 # View Management Group hierarchy
@@ -254,9 +254,29 @@ Show-Subscriptions
 # Get EA Enrollment Account for subscription creation
 Show-EAEnrollmentAccount
 
-# Remove policies (dry run)
+# Remove policies from a Management Group (use -WhatIf first!)
 Remove-PolicyAssignments -ManagementGroupName "Target-ALZ" -WhatIf
+Remove-PolicyAssignments -ManagementGroupName "Target-ALZ"
+
+# Remove entire MG hierarchy (use -WhatIf first!)
+Remove-ManagementGroupHierarchy -RootGroupName "Target-ALZ" -WhatIf
+Remove-ManagementGroupHierarchy -RootGroupName "Target-ALZ"
 ```
+
+### Interactive Menu Options
+
+| # | Option | Description |
+|---|--------|-------------|
+| 1 | Check Prerequisites | Verify Azure connection and modules |
+| 2 | Show MG Hierarchy | Display Management Group tree |
+| 3 | Show Policy Assignments | List policies at a MG scope |
+| 4 | Show Policy Compliance | Check compliance status |
+| 5 | List Subscriptions | Show all Azure subscriptions |
+| 6 | Show EA Enrollment Account | Get billing scope for subscription creation |
+| 7 | Run Deployment Script | Execute the main deployment |
+| 8 | Remove Policy Assignments | Preview policy removal (WhatIf) |
+| 9 | Remove MG Hierarchy | Preview hierarchy removal (WhatIf) |
+| Q | Quit | Exit the menu |
 
 ## 📊 Fabric Chargeback Integration
 
