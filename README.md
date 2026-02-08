@@ -100,6 +100,74 @@ $Config.General.DryRun = $false
 .\Deploy-AzureLandingZone.ps1
 ```
 
+## 🏦 Automated Subscription Creation (EA Only)
+
+If your organization has an **Enterprise Agreement (EA)**, the script can automatically create Azure subscriptions.
+
+### Prerequisites
+
+- Enterprise Agreement (EA) or Microsoft Customer Agreement (MCA)
+- Owner permissions on EA Enrollment Account
+- Billing Reader (minimum) to discover enrollment account
+
+### Step 1: Find Your EA Enrollment Account
+
+```powershell
+# Load helper functions and discover EA scope
+. .\ALZ-HelperFunctions.ps1
+Show-EAEnrollmentAccount
+```
+
+This will display your billing scope, e.g.:
+```
+/providers/Microsoft.Billing/billingAccounts/1234567/enrollmentAccounts/7654321
+```
+
+### Step 2: Configure EA Billing in the Script
+
+Edit `Deploy-AzureLandingZone.ps1`:
+
+```powershell
+Billing = @{
+    CreateSubscriptions = $true
+    EnrollmentAccountScope = "/providers/Microsoft.Billing/billingAccounts/YOUR_ID/enrollmentAccounts/YOUR_ENROLLMENT"
+    WorkloadType = "Production"  # or "DevTest"
+}
+```
+
+### Step 3: Enable Subscription Creation per Entry
+
+For each subscription you want to auto-create, set `CreateIfMissing = $true`:
+
+```powershell
+FabricBU1 = @{
+    Name = "Fabric-BU1-Subscription"
+    SubscriptionId = $null          # No existing subscription
+    TargetMG = "Fabric-BU1"
+    CreateIfMissing = $true         # Will create automatically
+}
+```
+
+### Step 4: Run Deployment
+
+```powershell
+.\Deploy-AzureLandingZone.ps1
+```
+
+The script will:
+1. Create subscriptions that don't exist (where `CreateIfMissing = $true`)
+2. Automatically place them in the correct Management Group
+3. Apply policies to the Management Group hierarchy
+
+### Subscription Creation Behavior
+
+| Scenario | Behavior |
+|----------|----------|
+| `SubscriptionId` provided | Moves existing subscription to target MG |
+| `SubscriptionId = $null` + `CreateIfMissing = $false` | Skipped |
+| `SubscriptionId = $null` + `CreateIfMissing = $true` + EA configured | Creates new subscription |
+| `SubscriptionId = $null` + `CreateIfMissing = $true` + No EA | Warning displayed, skipped |
+
 ## ⚙️ Configuration Reference
 
 ### General Settings
@@ -111,6 +179,25 @@ $Config.General.DryRun = $false
 | `AllowedLocations` | Regions allowed by policy | `eastus, eastus2, westus2, centralus` |
 | `DryRun` | Preview mode (no changes) | `$true` |
 | `VerboseLogging` | Detailed output | `$true` |
+
+### EA Billing Settings (for Subscription Creation)
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `CreateSubscriptions` | Enable automated subscription creation | `$false` |
+| `EnrollmentAccountScope` | EA billing scope (required for creation) | `$null` |
+| `WorkloadType` | Production or DevTest | `Production` |
+
+### Subscription Settings
+
+Each subscription entry supports:
+
+| Property | Description |
+|----------|-------------|
+| `Name` | Display name for the subscription |
+| `SubscriptionId` | Existing subscription GUID (or `$null` to create) |
+| `TargetMG` | Target Management Group name |
+| `CreateIfMissing` | Set to `$true` to auto-create if no ID provided |
 
 ### Policy Toggles
 
@@ -163,6 +250,9 @@ Show-PolicyCompliance -ManagementGroupName "Target-ALZ"
 
 # List all subscriptions
 Show-Subscriptions
+
+# Get EA Enrollment Account for subscription creation
+Show-EAEnrollmentAccount
 
 # Remove policies (dry run)
 Remove-PolicyAssignments -ManagementGroupName "Target-ALZ" -WhatIf
@@ -244,5 +334,17 @@ Remove-ManagementGroupHierarchy -RootGroupName "Target-ALZ"
 1. **Management Group creation** may take a few minutes to propagate
 2. **Policy compliance** data takes up to 24 hours to populate
 3. **Subscription movement** requires appropriate RBAC permissions
-4. **Always test** in Dry Run mode before executing in production
-5. **Backup** existing configurations before making changes
+4. **Subscription creation** requires EA Owner on Enrollment Account
+5. **New subscriptions** take ~30 seconds to provision before assignment
+6. **Always test** in Dry Run mode before executing in production
+7. **Backup** existing configurations before making changes
+
+## 🔐 Required Permissions
+
+| Action | Required Permission |
+|--------|---------------------|
+| Create Management Groups | Management Group Contributor at Tenant Root |
+| Assign Policies | Resource Policy Contributor at MG scope |
+| Move Subscriptions | Owner on subscription + MG Contributor |
+| Create Subscriptions | Owner on EA Enrollment Account |
+| View EA Billing | Billing Reader or higher |

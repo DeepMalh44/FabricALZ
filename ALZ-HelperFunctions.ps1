@@ -228,6 +228,65 @@ function Show-Subscriptions {
     }
 }
 
+function Show-EAEnrollmentAccount {
+    <#
+    .SYNOPSIS
+        Shows EA Enrollment Account information for subscription creation.
+    .DESCRIPTION
+        Retrieves and displays the EA enrollment account scope needed for 
+        automated subscription creation in the deployment script.
+    #>
+    
+    Write-Host "`n╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host "║         EA ENROLLMENT ACCOUNT INFORMATION                        ║" -ForegroundColor Cyan
+    Write-Host "╚══════════════════════════════════════════════════════════════════╝`n" -ForegroundColor Cyan
+    
+    try {
+        Write-Host "Querying EA Enrollment Accounts..." -ForegroundColor Gray
+        $enrollmentAccounts = Get-AzEnrollmentAccount -ErrorAction Stop
+        
+        if ($enrollmentAccounts.Count -eq 0) {
+            Write-Host "No EA Enrollment Accounts found." -ForegroundColor Yellow
+            Write-Host "`nPossible reasons:" -ForegroundColor Gray
+            Write-Host "  - You don't have EA enrollment account owner permissions" -ForegroundColor Gray
+            Write-Host "  - Your organization doesn't use Enterprise Agreement" -ForegroundColor Gray
+            Write-Host "  - Try running with a different account that has EA permissions" -ForegroundColor Gray
+            return
+        }
+        
+        Write-Host "Found $($enrollmentAccounts.Count) EA Enrollment Account(s):`n" -ForegroundColor Green
+        
+        foreach ($account in $enrollmentAccounts) {
+            $billingScope = "/providers/Microsoft.Billing/billingAccounts/$($account.PrincipalName -replace '@.*', '')/enrollmentAccounts/$($account.ObjectId)"
+            
+            Write-Host "  📋 Principal: $($account.PrincipalName)" -ForegroundColor White
+            Write-Host "     Object ID: $($account.ObjectId)" -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "     🔑 Billing Scope (copy this to your config):" -ForegroundColor Yellow
+            Write-Host "     $billingScope" -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "  ─────────────────────────────────────────────────────" -ForegroundColor DarkGray
+        }
+        
+        Write-Host "`n📝 To enable subscription creation, update Deploy-AzureLandingZone.ps1:" -ForegroundColor White
+        Write-Host @"
+
+    Billing = @{
+        CreateSubscriptions = `$true
+        EnrollmentAccountScope = "<paste the billing scope from above>"
+        WorkloadType = "Production"
+    }
+
+"@ -ForegroundColor Gray
+        
+    }
+    catch {
+        Write-Host "Error retrieving EA Enrollment Accounts: $_" -ForegroundColor Red
+        Write-Host "`nAlternative method - try this command:" -ForegroundColor Yellow
+        Write-Host "  az billing enrollment-account list" -ForegroundColor Cyan
+    }
+}
+
 #endregion
 
 #region ==================== CLEANUP FUNCTIONS ====================
@@ -235,7 +294,7 @@ function Show-Subscriptions {
 function Remove-PolicyAssignments {
     <#
     .SYNOPSIS
-        Removes all policy assignments from a Management Group.
+        Removes policy assignments directly assigned to a Management Group (not inherited).
     
     .PARAMETER ManagementGroupName
         The name of the management group.
@@ -251,23 +310,32 @@ function Remove-PolicyAssignments {
     )
     
     $scope = "/providers/Microsoft.Management/managementGroups/$ManagementGroupName"
-    $assignments = Get-AzPolicyAssignment -Scope $scope
     
-    if ($assignments.Count -eq 0) {
-        Write-Host "No policy assignments found." -ForegroundColor Yellow
+    # Only get assignments directly at this scope (not inherited)
+    $assignments = Get-AzPolicyAssignment -Scope $scope -ErrorAction SilentlyContinue | Where-Object {
+        $_.Properties.Scope -eq $scope
+    }
+    
+    if (-not $assignments -or $assignments.Count -eq 0) {
+        Write-Host "  No direct policy assignments at this scope." -ForegroundColor Gray
         return
     }
     
-    Write-Host "Found $($assignments.Count) policy assignments.`n" -ForegroundColor White
+    Write-Host "  Found $($assignments.Count) direct policy assignments." -ForegroundColor White
     
     foreach ($assignment in $assignments) {
         if ($WhatIf) {
-            Write-Host "[WhatIf] Would remove: $($assignment.Properties.DisplayName)" -ForegroundColor Yellow
+            Write-Host "  [WhatIf] Would remove: $($assignment.Properties.DisplayName)" -ForegroundColor Yellow
         }
         else {
-            Write-Host "Removing: $($assignment.Properties.DisplayName)..." -ForegroundColor Cyan
-            Remove-AzPolicyAssignment -Name $assignment.Name -Scope $scope -ErrorAction SilentlyContinue
-            Write-Host "  Removed." -ForegroundColor Green
+            Write-Host "  Removing: $($assignment.Properties.DisplayName)..." -ForegroundColor Cyan
+            try {
+                Remove-AzPolicyAssignment -Name $assignment.Name -Scope $scope -ErrorAction Stop
+                Write-Host "    Removed." -ForegroundColor Green
+            }
+            catch {
+                Write-Host "    Failed: $_" -ForegroundColor Red
+            }
         }
     }
 }
@@ -301,40 +369,85 @@ function Remove-ManagementGroupHierarchy {
         }
     }
     
+    # Get the tenant root MG for moving subscriptions
+    $tenantRootMG = (Get-AzManagementGroup | Where-Object { $_.ParentId -eq $null })[0]
+    
     function Remove-MGRecursive {
         param(
             [string]$GroupName
         )
         
-        # Get children first
+        Write-Host "`nProcessing Management Group: $GroupName" -ForegroundColor Cyan
+        
+        # Get MG with expanded children
         $mg = Get-AzManagementGroup -GroupName $GroupName -Expand -ErrorAction SilentlyContinue
         
         if (-not $mg) {
+            Write-Host "  Management Group not found: $GroupName" -ForegroundColor Yellow
             return
         }
         
-        # Remove children recursively
-        foreach ($child in $mg.Children) {
-            if ($child.Type -eq "/providers/Microsoft.Management/managementGroups") {
-                Remove-MGRecursive -GroupName $child.Name
+        # Process children first (subscriptions and child MGs)
+        if ($mg.Children) {
+            foreach ($child in $mg.Children) {
+                if ($child.Type -eq "/subscriptions") {
+                    # Move subscription to tenant root
+                    $subId = $child.Name
+                    if ($WhatIf) {
+                        Write-Host "  [WhatIf] Would move subscription '$($child.DisplayName)' to tenant root" -ForegroundColor Yellow
+                    }
+                    else {
+                        Write-Host "  Moving subscription '$($child.DisplayName)' to tenant root..." -ForegroundColor Cyan
+                        try {
+                            New-AzManagementGroupSubscription -GroupName $tenantRootMG.Name -SubscriptionId $subId -ErrorAction Stop
+                            Write-Host "    Moved." -ForegroundColor Green
+                        }
+                        catch {
+                            Write-Host "    Failed to move: $_" -ForegroundColor Red
+                        }
+                    }
+                }
+                elseif ($child.Type -eq "/providers/Microsoft.Management/managementGroups") {
+                    # Recursively remove child MG
+                    Remove-MGRecursive -GroupName $child.Name
+                }
             }
         }
         
-        # Remove policy assignments first
+        # Remove policy assignments at this MG scope (direct only)
+        Write-Host "  Removing policy assignments..." -ForegroundColor Cyan
         Remove-PolicyAssignments -ManagementGroupName $GroupName -WhatIf:$WhatIf
         
-        # Remove the MG
+        # Remove role assignments at this scope (optional - uncomment if needed)
+        # $scope = "/providers/Microsoft.Management/managementGroups/$GroupName"
+        # $roleAssignments = Get-AzRoleAssignment -Scope $scope | Where-Object { $_.Scope -eq $scope }
+        # foreach ($ra in $roleAssignments) {
+        #     Remove-AzRoleAssignment -ObjectId $ra.ObjectId -Scope $scope -RoleDefinitionName $ra.RoleDefinitionName
+        # }
+        
+        # Now remove the MG itself
         if ($WhatIf) {
-            Write-Host "[WhatIf] Would remove MG: $GroupName" -ForegroundColor Yellow
+            Write-Host "  [WhatIf] Would remove MG: $GroupName" -ForegroundColor Yellow
         }
         else {
-            Write-Host "Removing MG: $GroupName..." -ForegroundColor Cyan
-            Remove-AzManagementGroup -GroupName $GroupName -ErrorAction SilentlyContinue
-            Write-Host "  Removed." -ForegroundColor Green
+            Write-Host "  Removing Management Group: $GroupName..." -ForegroundColor Cyan
+            try {
+                # Small delay to ensure Azure has processed child removals
+                Start-Sleep -Seconds 2
+                Remove-AzManagementGroup -GroupName $GroupName -ErrorAction Stop
+                Write-Host "  ✅ Removed: $GroupName" -ForegroundColor Green
+            }
+            catch {
+                Write-Host "  ❌ Failed to remove $GroupName : $_" -ForegroundColor Red
+            }
         }
     }
     
     Remove-MGRecursive -GroupName $RootGroupName
+    
+    if (-not $WhatIf) {
+        Write-Host "`n✅ Cleanup completed." -ForegroundColor Green
+    }
 }
 
 #endregion
@@ -432,4 +545,5 @@ Write-Host "  Show-ManagementGroupHierarchy  - Display MG tree" -ForegroundColor
 Write-Host "  Show-PolicyAssignments         - List policies at MG scope" -ForegroundColor White
 Write-Host "  Show-PolicyCompliance          - Check compliance status" -ForegroundColor White
 Write-Host "  Show-Subscriptions             - List all subscriptions" -ForegroundColor White
+Write-Host "  Show-EAEnrollmentAccount       - Get EA billing scope for subscription creation" -ForegroundColor Yellow
 Write-Host ""

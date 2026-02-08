@@ -51,7 +51,29 @@ $Config = @{
         VerboseLogging = $true
         
         # Dry run mode (set to $true to see what would be created without making changes)
-        DryRun = $false
+        DryRun = $true
+    }
+    
+    #----------------------------------------------------------
+    # ENTERPRISE AGREEMENT (EA) BILLING CONFIGURATION
+    # Required for automated subscription creation
+    # To find your EA Enrollment Account ID:
+    #   1. Run: Get-AzEnrollmentAccount
+    #   2. Copy the ObjectId value
+    # Or find it in Azure Portal > Cost Management + Billing > Billing scopes
+    #----------------------------------------------------------
+    Billing = @{
+        # Enable automated subscription creation
+        CreateSubscriptions = $false  # Set to $true to enable subscription creation
+        
+        # EA Enrollment Account ID (required for subscription creation)
+        # Format: /providers/Microsoft.Billing/billingAccounts/{billingAccountName}/enrollmentAccounts/{enrollmentAccountName}
+        # Example: /providers/Microsoft.Billing/billingAccounts/1234567/enrollmentAccounts/7654321
+        EnrollmentAccountScope = $null  # Set your EA enrollment account scope here
+        
+        # Workload type for new subscriptions
+        # Options: "Production", "DevTest"
+        WorkloadType = "Production"
     }
     
     #----------------------------------------------------------
@@ -92,50 +114,61 @@ $Config = @{
     #----------------------------------------------------------
     # SUBSCRIPTION ASSIGNMENTS
     # Map subscriptions to their target Management Groups
-    # Use subscription name or ID
-    # Set to $null or remove entry if subscription doesn't exist yet
+    # 
+    # Two modes:
+    # 1. CREATE MODE: Set SubscriptionId = $null and CreateIfMissing = $true
+    #    (Requires Billing.CreateSubscriptions = $true and valid EA scope)
+    # 2. ASSIGN MODE: Set SubscriptionId to existing subscription ID
+    #    (Will move existing subscription to target MG)
     #----------------------------------------------------------
     Subscriptions = @{
         # Platform subscriptions
         Platform = @{
             Security = @{
                 Name = "Security-Subscription"
-                SubscriptionId = $null  # Set to subscription ID if it exists, or $null to skip
+                SubscriptionId = $null  # Set to subscription ID if it exists, or $null to create new
                 TargetMG = "Security"
+                CreateIfMissing = $false  # Set to $true to create if doesn't exist
             }
             Management = @{
                 Name = "Management-Subscription"
                 SubscriptionId = $null
                 TargetMG = "Management"
+                CreateIfMissing = $false
             }
             Identity = @{
                 Name = "Identity-Subscription"
                 SubscriptionId = $null
                 TargetMG = "Identity"
+                CreateIfMissing = $false
             }
             Connectivity = @{
                 Name = "Connectivity-Subscription"
                 SubscriptionId = $null
                 TargetMG = "Connectivity"
+                CreateIfMissing = $false
             }
         }
         
         # Landing Zone subscriptions (Fabric Business Units)
         LandingZones = @{
             FabricBU1 = @{
-                Name = "Fabric-Subscription-1"
-                SubscriptionId = $null  # Set to actual subscription ID
+                Name = "Fabric-BU1-Subscription"
+                SubscriptionId = $null  # Set to actual subscription ID or $null to create
                 TargetMG = "Fabric-BU1"
+                CreateIfMissing = $true  # Will create this subscription if EA scope is configured
             }
             FabricBU2 = @{
-                Name = "Fabric-Subscription-2"
+                Name = "Fabric-BU2-Subscription"
                 SubscriptionId = $null
                 TargetMG = "Fabric-BU2"
+                CreateIfMissing = $true
             }
             FabricBU3 = @{
-                Name = "Fabric-Subscription-3"
+                Name = "Fabric-BU3-Subscription"
                 SubscriptionId = $null
                 TargetMG = "Fabric-BU3"
+                CreateIfMissing = $true
             }
         }
     }
@@ -480,6 +513,88 @@ function Deploy-ManagementGroupHierarchy {
 
 #region ==================== SUBSCRIPTION FUNCTIONS ====================
 
+function New-SubscriptionIfNotExists {
+    <#
+    .SYNOPSIS
+        Creates a new Azure subscription using EA enrollment account.
+    .DESCRIPTION
+        Creates a subscription via New-AzSubscriptionAlias if it doesn't already exist.
+        Requires EA enrollment account scope to be configured.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SubscriptionName,
+        
+        [Parameter(Mandatory = $true)]
+        [string]$TargetMGName
+    )
+    
+    # Check if EA billing is configured
+    if (-not $Config.Billing.CreateSubscriptions) {
+        Write-Log "Subscription creation is disabled. Set Billing.CreateSubscriptions = `$true to enable." -Level "WARNING"
+        return $null
+    }
+    
+    if (-not $Config.Billing.EnrollmentAccountScope) {
+        Write-Log "EA Enrollment Account scope not configured. Cannot create subscription." -Level "ERROR"
+        Write-Log "To find your EA scope, run: Get-AzEnrollmentAccount" -Level "INFO"
+        return $null
+    }
+    
+    # Check if subscription already exists by name
+    $existingSub = Get-AzSubscription -SubscriptionName $SubscriptionName -ErrorAction SilentlyContinue
+    if ($existingSub) {
+        Write-Log "Subscription '$SubscriptionName' already exists with ID: $($existingSub.Id)" -Level "INFO"
+        return $existingSub.Id
+    }
+    
+    # Generate alias name (must be unique, alphanumeric with hyphens)
+    $aliasName = ($SubscriptionName -replace '[^a-zA-Z0-9-]', '-').ToLower()
+    if ($aliasName.Length -gt 64) {
+        $aliasName = $aliasName.Substring(0, 64)
+    }
+    
+    $fullMGName = Get-FullMGName -Name $TargetMGName
+    $mgScope = Get-MGScope -MGName $fullMGName
+    
+    if ($Config.General.DryRun) {
+        Write-Log "[DRY RUN] Would create subscription:" -Level "WARNING"
+        Write-Log "  Name: $SubscriptionName" -Level "WARNING"
+        Write-Log "  Alias: $aliasName" -Level "WARNING"
+        Write-Log "  Target MG: $fullMGName" -Level "WARNING"
+        Write-Log "  Workload: $($Config.Billing.WorkloadType)" -Level "WARNING"
+        return "dry-run-subscription-id"
+    }
+    
+    Write-Log "Creating subscription '$SubscriptionName'..." -Level "INFO"
+    Write-Log "  Billing Scope: $($Config.Billing.EnrollmentAccountScope)" -Level "DEBUG"
+    Write-Log "  Target MG: $fullMGName" -Level "DEBUG"
+    
+    try {
+        $newSub = New-AzSubscriptionAlias `
+            -AliasName $aliasName `
+            -SubscriptionName $SubscriptionName `
+            -BillingScope $Config.Billing.EnrollmentAccountScope `
+            -Workload $Config.Billing.WorkloadType `
+            -ManagementGroupId $mgScope `
+            -ErrorAction Stop
+        
+        $subscriptionId = $newSub.Properties.SubscriptionId
+        Write-Log "Successfully created subscription '$SubscriptionName'" -Level "SUCCESS"
+        Write-Log "  Subscription ID: $subscriptionId" -Level "INFO"
+        
+        # Wait for subscription to be fully provisioned
+        Write-Log "Waiting for subscription provisioning (30 seconds)..." -Level "INFO"
+        Start-Sleep -Seconds 30
+        
+        return $subscriptionId
+    }
+    catch {
+        Write-Log "Failed to create subscription '$SubscriptionName': $_" -Level "ERROR"
+        return $null
+    }
+}
+
 function Move-SubscriptionToMG {
     param(
         [Parameter(Mandatory = $true)]
@@ -509,32 +624,55 @@ function Move-SubscriptionToMG {
 
 function Deploy-SubscriptionAssignments {
     Write-Log "========================================" -Level "INFO"
-    Write-Log "ASSIGNING SUBSCRIPTIONS TO MANAGEMENT GROUPS" -Level "INFO"
+    Write-Log "PROVISIONING AND ASSIGNING SUBSCRIPTIONS" -Level "INFO"
     Write-Log "========================================" -Level "INFO"
     
+    if ($Config.Billing.CreateSubscriptions -and $Config.Billing.EnrollmentAccountScope) {
+        Write-Log "EA Subscription Creation: ENABLED" -Level "INFO"
+        Write-Log "Enrollment Account: $($Config.Billing.EnrollmentAccountScope)" -Level "DEBUG"
+    }
+    else {
+        Write-Log "EA Subscription Creation: DISABLED (will only assign existing subscriptions)" -Level "INFO"
+    }
+    
+    # Helper function to process a subscription entry
+    function Process-Subscription {
+        param($sub)
+        
+        $subscriptionId = $sub.SubscriptionId
+        
+        # If no subscription ID and CreateIfMissing is true, try to create it
+        if (-not $subscriptionId -and $sub.CreateIfMissing) {
+            Write-Log "Attempting to create subscription: $($sub.Name)" -Level "INFO"
+            $subscriptionId = New-SubscriptionIfNotExists `
+                -SubscriptionName $sub.Name `
+                -TargetMGName $sub.TargetMG
+        }
+        
+        # If we have a subscription ID, move it to the target MG
+        if ($subscriptionId -and $subscriptionId -ne "dry-run-subscription-id") {
+            Move-SubscriptionToMG -SubscriptionId $subscriptionId -TargetMGName $sub.TargetMG
+        }
+        elseif (-not $subscriptionId) {
+            Write-Log "Skipping '$($sub.Name)' - No subscription ID and creation not enabled" -Level "DEBUG"
+        }
+    }
+    
     # Process Platform subscriptions
+    Write-Log "Processing Platform subscriptions..." -Level "INFO"
     foreach ($key in $Config.Subscriptions.Platform.Keys) {
         $sub = $Config.Subscriptions.Platform[$key]
-        if ($sub.SubscriptionId) {
-            Move-SubscriptionToMG -SubscriptionId $sub.SubscriptionId -TargetMGName $sub.TargetMG
-        }
-        else {
-            Write-Log "Skipping '$($sub.Name)' - No subscription ID provided" -Level "DEBUG"
-        }
+        Process-Subscription -sub $sub
     }
     
     # Process Landing Zone subscriptions
+    Write-Log "Processing Landing Zone subscriptions..." -Level "INFO"
     foreach ($key in $Config.Subscriptions.LandingZones.Keys) {
         $sub = $Config.Subscriptions.LandingZones[$key]
-        if ($sub.SubscriptionId) {
-            Move-SubscriptionToMG -SubscriptionId $sub.SubscriptionId -TargetMGName $sub.TargetMG
-        }
-        else {
-            Write-Log "Skipping '$($sub.Name)' - No subscription ID provided" -Level "DEBUG"
-        }
+        Process-Subscription -sub $sub
     }
     
-    Write-Log "Subscription assignments completed." -Level "SUCCESS"
+    Write-Log "Subscription provisioning completed." -Level "SUCCESS"
 }
 
 #endregion
