@@ -1,0 +1,72 @@
+Category,Setting,Config Path,Current Value,Options/Valid Values,Description
+General,Prefix,General.Prefix,Target,Any string,Organization prefix prepended to all Management Group names
+General,PrimaryLocation,General.PrimaryLocation,eastus,Any valid Azure region,Default Azure region for deployments
+General,AllowedLocations,General.AllowedLocations,"eastus, eastus2, westus2, centralus",Comma-separated Azure regions,Regions allowed by Location policy
+General,VerboseLogging,General.VerboseLogging,true,true / false,Enable detailed logging output
+General,DryRun,General.DryRun,true,true / false,Preview mode - no changes made when true
+EA Billing,CreateSubscriptions,Billing.CreateSubscriptions,false,true / false,Enable automated subscription creation (requires EA)
+EA Billing,EnrollmentAccountScope,Billing.EnrollmentAccountScope,null,EA billing scope path,"/providers/Microsoft.Billing/billingAccounts/{id}/enrollmentAccounts/{id}"
+EA Billing,WorkloadType,Billing.WorkloadType,Production,Production / DevTest,Workload type for new subscriptions
+MG - Root,Name,ManagementGroups.Root.Name,ALZ,Any string,Root MG name (becomes Prefix-Name e.g. Target-ALZ)
+MG - Root,DisplayName,ManagementGroups.Root.DisplayName,Target ALZ,Any string,Display name shown in Azure Portal
+MG - Platform,Name,ManagementGroups.Platform.Name,Platform,Any string,Platform MG name
+MG - Platform,DisplayName,ManagementGroups.Platform.DisplayName,Platform,Any string,Display name for Platform MG
+MG - Platform,Children,ManagementGroups.Platform.Children,"Security, Management, Identity, Connectivity",Array of @{Name; DisplayName},Platform child MGs
+MG - LandingZones,Name,ManagementGroups.LandingZones.Name,LandingZones,Any string,Landing Zones MG name
+MG - LandingZones,DisplayName,ManagementGroups.LandingZones.DisplayName,Landing zones,Any string,Display name for Landing Zones MG
+MG - LandingZones,Children,ManagementGroups.LandingZones.Children,"Fabric-BU1, Fabric-BU2, Fabric-BU3",Array of @{Name; DisplayName},Business Unit child MGs
+Sub - Security,Name,Subscriptions.Platform.Security.Name,Security-Subscription,Any string,Subscription display name
+Sub - Security,SubscriptionId,Subscriptions.Platform.Security.SubscriptionId,null,GUID or null,Existing subscription ID or null to create
+Sub - Security,TargetMG,Subscriptions.Platform.Security.TargetMG,Security,MG Name,Target Management Group
+Sub - Security,CreateIfMissing,Subscriptions.Platform.Security.CreateIfMissing,false,true / false,Create subscription if ID is null
+Sub - Management,Name,Subscriptions.Platform.Management.Name,Management-Subscription,Any string,Subscription display name
+Sub - Management,SubscriptionId,Subscriptions.Platform.Management.SubscriptionId,null,GUID or null,Existing subscription ID or null to create
+Sub - Management,TargetMG,Subscriptions.Platform.Management.TargetMG,Management,MG Name,Target Management Group
+Sub - Management,CreateIfMissing,Subscriptions.Platform.Management.CreateIfMissing,false,true / false,Create subscription if ID is null
+Sub - Identity,Name,Subscriptions.Platform.Identity.Name,Identity-Subscription,Any string,Subscription display name
+Sub - Identity,SubscriptionId,Subscriptions.Platform.Identity.SubscriptionId,null,GUID or null,Existing subscription ID or null to create
+Sub - Identity,TargetMG,Subscriptions.Platform.Identity.TargetMG,Identity,MG Name,Target Management Group
+Sub - Identity,CreateIfMissing,Subscriptions.Platform.Identity.CreateIfMissing,false,true / false,Create subscription if ID is null
+Sub - Connectivity,Name,Subscriptions.Platform.Connectivity.Name,Connectivity-Subscription,Any string,Subscription display name
+Sub - Connectivity,SubscriptionId,Subscriptions.Platform.Connectivity.SubscriptionId,null,GUID or null,Existing subscription ID or null to create
+Sub - Connectivity,TargetMG,Subscriptions.Platform.Connectivity.TargetMG,Connectivity,MG Name,Target Management Group
+Sub - Connectivity,CreateIfMissing,Subscriptions.Platform.Connectivity.CreateIfMissing,false,true / false,Create subscription if ID is null
+Sub - Fabric BU1,Name,Subscriptions.LandingZones.FabricBU1.Name,Fabric-BU1-Subscription,Any string,Subscription display name
+Sub - Fabric BU1,SubscriptionId,Subscriptions.LandingZones.FabricBU1.SubscriptionId,null,GUID or null,Existing subscription ID or null to create
+Sub - Fabric BU1,TargetMG,Subscriptions.LandingZones.FabricBU1.TargetMG,Fabric-BU1,MG Name,Target Management Group
+Sub - Fabric BU1,CreateIfMissing,Subscriptions.LandingZones.FabricBU1.CreateIfMissing,true,true / false,Create subscription if ID is null
+Sub - Fabric BU2,Name,Subscriptions.LandingZones.FabricBU2.Name,Fabric-BU2-Subscription,Any string,Subscription display name
+Sub - Fabric BU2,SubscriptionId,Subscriptions.LandingZones.FabricBU2.SubscriptionId,null,GUID or null,Existing subscription ID or null to create
+Sub - Fabric BU2,TargetMG,Subscriptions.LandingZones.FabricBU2.TargetMG,Fabric-BU2,MG Name,Target Management Group
+Sub - Fabric BU2,CreateIfMissing,Subscriptions.LandingZones.FabricBU2.CreateIfMissing,true,true / false,Create subscription if ID is null
+Sub - Fabric BU3,Name,Subscriptions.LandingZones.FabricBU3.Name,Fabric-BU3-Subscription,Any string,Subscription display name
+Sub - Fabric BU3,SubscriptionId,Subscriptions.LandingZones.FabricBU3.SubscriptionId,null,GUID or null,Existing subscription ID or null to create
+Sub - Fabric BU3,TargetMG,Subscriptions.LandingZones.FabricBU3.TargetMG,Fabric-BU3,MG Name,Target Management Group
+Sub - Fabric BU3,CreateIfMissing,Subscriptions.LandingZones.FabricBU3.CreateIfMissing,true,true / false,Create subscription if ID is null
+Policy - Tagging,Enabled,Policies.Tagging.Enabled,true,true / false,Enable all tagging policies
+Policy - Tagging,Scope,Policies.Tagging.Scope,Root,"Root, Platform, LandingZones, All",Where to apply tagging policies
+Policy - Tagging,RequiredTags.Enabled,Policies.Tagging.RequiredTags.Enabled,true,true / false,Enable required tags (Deny effect)
+Policy - Tagging,RequiredTags.CostCenter,Policies.Tagging.RequiredTags.Tags[0].Effect,Deny,Deny / Audit,Effect for CostCenter tag
+Policy - Tagging,RequiredTags.Environment,Policies.Tagging.RequiredTags.Tags[1].Effect,Deny,Deny / Audit,Effect for Environment tag
+Policy - Tagging,AuditTags.Enabled,Policies.Tagging.AuditTags.Enabled,true,true / false,Enable audit-only tags
+Policy - Tagging,AuditTags.Tags,Policies.Tagging.AuditTags.Tags,"Owner, Application, Department",Tag names,Tags to audit (non-blocking)
+Policy - Tagging,InheritTagsFromRG.Enabled,Policies.Tagging.InheritTagsFromRG.Enabled,true,true / false,Enable tag inheritance from Resource Groups
+Policy - Tagging,InheritTagsFromRG.Tags,Policies.Tagging.InheritTagsFromRG.Tags,"CostCenter, Environment, Department",Tag names,Tags to inherit from RG
+Policy - Location,Enabled,Policies.Location.Enabled,true,true / false,Enable all location policies
+Policy - Location,Scope,Policies.Location.Scope,Root,"Root, Platform, LandingZones, All",Where to apply location policies
+Policy - Location,AllowedLocations.Enabled,Policies.Location.AllowedLocations.Enabled,true,true / false,Restrict resource locations (Deny only - no Audit)
+Policy - Location,AllowedLocationsForRGs.Enabled,Policies.Location.AllowedLocationsForRGs.Enabled,true,true / false,Restrict RG locations (Deny only - no Audit)
+Policy - Security,Enabled,Policies.Security.Enabled,true,true / false,Enable all security baseline policies
+Policy - Security,Scope,Policies.Security.Scope,Root,"Root, Platform, LandingZones, All",Where to apply security policies
+Policy - Security,SecureTransferForStorage.Enabled,Policies.Security.SecureTransferForStorage.Enabled,true,true / false,Enable secure transfer policy for storage
+Policy - Security,SecureTransferForStorage.Effect,Policies.Security.SecureTransferForStorage.Effect,Audit,Audit / Deny,Effect for secure transfer policy
+Policy - Security,HttpsOnlyForWebApps.Enabled,Policies.Security.HttpsOnlyForWebApps.Enabled,true,true / false,Enable HTTPS-only policy for web apps
+Policy - Security,HttpsOnlyForWebApps.Effect,Policies.Security.HttpsOnlyForWebApps.Effect,Audit,Audit / Deny,Effect for HTTPS-only policy
+Policy - Security,MinimumTLSVersion.Enabled,Policies.Security.MinimumTLSVersion.Enabled,true,true / false,Enable TLS 1.2 minimum policy
+Policy - Security,MinimumTLSVersion.Effect,Policies.Security.MinimumTLSVersion.Effect,Audit,Audit / Deny,Effect for TLS version policy
+Policy - Security,ManagedDisksForVMs.Enabled,Policies.Security.ManagedDisksForVMs.Enabled,true,true / false,Enable managed disks policy for VMs
+Policy - Security,ManagedDisksForVMs.Effect,Policies.Security.ManagedDisksForVMs.Effect,Audit,Audit / Deny,Effect for managed disks policy
+Policy - Cost,Enabled,Policies.CostManagement.Enabled,true,true / false,Enable cost management policies
+Policy - Cost,Scope,Policies.CostManagement.Scope,LandingZones,"Root, Platform, LandingZones, All",Where to apply cost policies
+Policy - Cost,RequireTagsOnRGs.Enabled,Policies.CostManagement.RequireTagsOnRGs.Enabled,true,true / false,Require tags on Resource Groups
+Policy - Cost,RequireTagsOnRGs.Tags,Policies.CostManagement.RequireTagsOnRGs.Tags,"CostCenter, Department",Tag names,Tags required on Resource Groups (Deny effect)
