@@ -189,12 +189,12 @@ $Config = @{
             # Options: "Root", "Platform", "LandingZones", "All"
             Scope = "Root"
             
-            # Required tags with Deny effect (blocks deployment if missing)
+            # Required tags with Audit effect (reports non-compliance but doesn't block)
             RequiredTags = @{
                 Enabled = $true
                 Tags = @(
-                    @{ Name = "CostCenter"; Effect = "Deny" },
-                    @{ Name = "Environment"; Effect = "Deny" }
+                    @{ Name = "CostCenter"; Effect = "Audit" },
+                    @{ Name = "Environment"; Effect = "Audit" }
                 )
             }
             
