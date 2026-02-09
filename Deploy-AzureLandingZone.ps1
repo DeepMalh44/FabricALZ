@@ -25,7 +25,10 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
-    [string]$ConfigFile = ""
+    [string]$ConfigFile = "",
+    
+    [Parameter(Mandatory = $false)]
+    [Nullable[bool]]$DryRun = $null
 )
 
 #region ==================== CONFIGURATION ====================
@@ -51,6 +54,7 @@ $Config = @{
         VerboseLogging = $true
         
         # Dry run mode (set to $true to see what would be created without making changes)
+        # Can be overridden via -DryRun parameter
         DryRun = $true
     }
     
@@ -295,6 +299,11 @@ $Config = @{
             }
         }
     }
+}
+
+# Override DryRun from parameter if provided
+if ($null -ne $DryRun) {
+    $Config.General.DryRun = $DryRun
 }
 
 #endregion

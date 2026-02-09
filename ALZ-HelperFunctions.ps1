@@ -360,6 +360,8 @@ function Remove-ManagementGroupHierarchy {
     )
     
     Write-Host "`n⚠️  WARNING: This will remove the Management Group and all its children!" -ForegroundColor Red
+    Write-Host "📌 NOTE: Subscriptions will be MOVED to tenant root (NOT deleted)." -ForegroundColor Green
+    Write-Host "📌 NOTE: Resources within subscriptions are NOT affected." -ForegroundColor Green
     
     if (-not $WhatIf) {
         $confirm = Read-Host "Type 'DELETE' to confirm"
@@ -369,7 +371,7 @@ function Remove-ManagementGroupHierarchy {
         }
     }
     
-    # Get the tenant root MG for moving subscriptions
+    # Get the tenant root MG for moving subscriptions (subscriptions are MOVED, never deleted)
     $tenantRootMG = (Get-AzManagementGroup | Where-Object { $_.ParentId -eq $null })[0]
     
     function Remove-MGRecursive {
@@ -391,16 +393,16 @@ function Remove-ManagementGroupHierarchy {
         if ($mg.Children) {
             foreach ($child in $mg.Children) {
                 if ($child.Type -eq "/subscriptions") {
-                    # Move subscription to tenant root
+                    # MOVE subscription to tenant root (subscriptions are NEVER deleted)
                     $subId = $child.Name
                     if ($WhatIf) {
-                        Write-Host "  [WhatIf] Would move subscription '$($child.DisplayName)' to tenant root" -ForegroundColor Yellow
+                        Write-Host "  [WhatIf] Would MOVE subscription '$($child.DisplayName)' to tenant root (not delete)" -ForegroundColor Yellow
                     }
                     else {
-                        Write-Host "  Moving subscription '$($child.DisplayName)' to tenant root..." -ForegroundColor Cyan
+                        Write-Host "  MOVING subscription '$($child.DisplayName)' to tenant root (not deleting)..." -ForegroundColor Cyan
                         try {
                             New-AzManagementGroupSubscription -GroupName $tenantRootMG.Name -SubscriptionId $subId -ErrorAction Stop
-                            Write-Host "    Moved." -ForegroundColor Green
+                            Write-Host "    Moved successfully. Subscription preserved." -ForegroundColor Green
                         }
                         catch {
                             Write-Host "    Failed to move: $_" -ForegroundColor Red
@@ -447,6 +449,7 @@ function Remove-ManagementGroupHierarchy {
     
     if (-not $WhatIf) {
         Write-Host "`n✅ Cleanup completed." -ForegroundColor Green
+        Write-Host "📌 All subscriptions have been preserved and moved to the tenant root." -ForegroundColor Green
     }
 }
 
@@ -469,8 +472,8 @@ function Show-Menu {
     Write-Host ""
     Write-Host "  7. Run Deployment Script" -ForegroundColor Green
     Write-Host ""
-    Write-Host "  8. Remove Policy Assignments (WhatIf)" -ForegroundColor Yellow
-    Write-Host "  9. Remove Management Group Hierarchy (WhatIf)" -ForegroundColor Yellow
+    Write-Host "  8. Remove Policy Assignments" -ForegroundColor Yellow
+    Write-Host "  9. Remove Management Group Hierarchy" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "  Q. Quit" -ForegroundColor Gray
     Write-Host ""
@@ -519,10 +522,31 @@ function Start-InteractiveMenu {
                 Read-Host "`nPress Enter to continue"
             }
             '7' {
+                Write-Host "`n╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+                Write-Host "║              DEPLOYMENT MODE SELECTION                           ║" -ForegroundColor Cyan
+                Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host "  1. Dry Run Mode (Preview only - no changes)" -ForegroundColor Yellow
+                Write-Host "  2. Live Mode (Apply changes to Azure)" -ForegroundColor Red
+                Write-Host "  Q. Cancel" -ForegroundColor Gray
+                Write-Host ""
+                $modeSelection = Read-Host "Select deployment mode"
+                
+                $dryRunValue = $null
+                switch ($modeSelection) {
+                    '1' { $dryRunValue = $true }
+                    '2' { $dryRunValue = $false }
+                    default {
+                        Write-Host "Cancelled." -ForegroundColor Yellow
+                        Read-Host "`nPress Enter to continue"
+                        continue
+                    }
+                }
+                
                 Write-Host "`nRunning deployment script..." -ForegroundColor Cyan
                 Write-Host "─────────────────────────────────────────────────────────────────`n" -ForegroundColor DarkGray
                 try {
-                    & "$PSScriptRoot\Deploy-AzureLandingZone.ps1"
+                    & "$PSScriptRoot\Deploy-AzureLandingZone.ps1" -DryRun $dryRunValue
                 }
                 catch {
                     Write-Host "`nDeployment encountered an error: $_" -ForegroundColor Red
@@ -534,14 +558,32 @@ function Start-InteractiveMenu {
             '8' {
                 $mgName = Read-Host "Enter Management Group name"
                 if ($mgName) {
-                    Remove-PolicyAssignments -ManagementGroupName $mgName -WhatIf
+                    Write-Host "`n  1. Preview only (WhatIf)" -ForegroundColor Yellow
+                    Write-Host "  2. Actually remove" -ForegroundColor Red
+                    Write-Host "  Q. Cancel" -ForegroundColor Gray
+                    $removeMode = Read-Host "`nSelect mode"
+                    
+                    switch ($removeMode) {
+                        '1' { Remove-PolicyAssignments -ManagementGroupName $mgName -WhatIf }
+                        '2' { Remove-PolicyAssignments -ManagementGroupName $mgName }
+                        default { Write-Host "Cancelled." -ForegroundColor Yellow }
+                    }
                 }
                 Read-Host "`nPress Enter to continue"
             }
             '9' {
                 $mgName = Read-Host "Enter root Management Group name to remove"
                 if ($mgName) {
-                    Remove-ManagementGroupHierarchy -RootGroupName $mgName -WhatIf
+                    Write-Host "`n  1. Preview only (WhatIf)" -ForegroundColor Yellow
+                    Write-Host "  2. Actually remove" -ForegroundColor Red
+                    Write-Host "  Q. Cancel" -ForegroundColor Gray
+                    $removeMode = Read-Host "`nSelect mode"
+                    
+                    switch ($removeMode) {
+                        '1' { Remove-ManagementGroupHierarchy -RootGroupName $mgName -WhatIf }
+                        '2' { Remove-ManagementGroupHierarchy -RootGroupName $mgName }
+                        default { Write-Host "Cancelled." -ForegroundColor Yellow }
+                    }
                 }
                 Read-Host "`nPress Enter to continue"
             }
