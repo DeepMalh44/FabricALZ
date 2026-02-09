@@ -225,12 +225,15 @@ $Config = @{
             Scope = "Root"
             
             # Allowed locations for resources
+            # Note: This policy only supports "Deny" or "Disabled" (no Audit option)
+            # Set Enabled = $false to disable without removing
             AllowedLocations = @{
                 Enabled = $true
                 # Uses General.AllowedLocations by default
             }
             
             # Allowed locations for Resource Groups
+            # Note: This policy only supports "Deny" or "Disabled" (no Audit option)
             AllowedLocationsForRGs = @{
                 Enabled = $true
             }
