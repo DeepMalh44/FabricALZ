@@ -16,6 +16,44 @@
 
 #region ==================== PREREQUISITE CHECK ====================
 
+function Confirm-AzureConnection {
+    <#
+    .SYNOPSIS
+        Ensures user is connected to Azure. Prompts to login if not connected.
+    .DESCRIPTION
+        Quick check for Azure connection. If not connected, offers to run Connect-AzAccount.
+        Returns $true if connected, $false if user declines to connect.
+    #>
+    $context = Get-AzContext -ErrorAction SilentlyContinue
+    
+    if ($context) {
+        return $true
+    }
+    
+    Write-Host "`n⚠️  Not connected to Azure!" -ForegroundColor Yellow
+    $response = Read-Host "Would you like to login now? (Y/N)"
+    
+    if ($response -eq 'Y' -or $response -eq 'y') {
+        Write-Host "Launching Azure login..." -ForegroundColor Cyan
+        try {
+            Connect-AzAccount -ErrorAction Stop
+            $context = Get-AzContext
+            if ($context) {
+                Write-Host "✅ Connected as: $($context.Account.Id)" -ForegroundColor Green
+                Write-Host "   Tenant: $($context.Tenant.Id)" -ForegroundColor Gray
+                return $true
+            }
+        }
+        catch {
+            Write-Host "❌ Login failed: $_" -ForegroundColor Red
+            return $false
+        }
+    }
+    
+    Write-Host "Operation cancelled - Azure login required." -ForegroundColor Yellow
+    return $false
+}
+
 function Test-Prerequisites {
     Write-Host "Checking prerequisites..." -ForegroundColor Cyan
     
@@ -35,16 +73,12 @@ function Test-Prerequisites {
         return $false
     }
     
-    # Check Azure connection
-    $context = Get-AzContext
-    if (-not $context) {
-        Write-Host "Not connected to Azure. Run 'Connect-AzAccount' first." -ForegroundColor Red
+    # Check Azure connection (use the new function)
+    if (-not (Confirm-AzureConnection)) {
         return $false
     }
     
     Write-Host "Prerequisites check passed." -ForegroundColor Green
-    Write-Host "Connected as: $($context.Account.Id)" -ForegroundColor Gray
-    Write-Host "Tenant: $($context.Tenant.Id)" -ForegroundColor Gray
     return $true
 }
 
@@ -490,6 +524,10 @@ function Start-InteractiveMenu {
                 Read-Host "`nPress Enter to continue"
             }
             '2' {
+                if (-not (Confirm-AzureConnection)) {
+                    Read-Host "`nPress Enter to continue"
+                    continue
+                }
                 $mgName = Read-Host "Enter Management Group name (or press Enter for all)"
                 if ($mgName) {
                     Show-ManagementGroupHierarchy -RootGroupName $mgName
@@ -500,6 +538,10 @@ function Start-InteractiveMenu {
                 Read-Host "`nPress Enter to continue"
             }
             '3' {
+                if (-not (Confirm-AzureConnection)) {
+                    Read-Host "`nPress Enter to continue"
+                    continue
+                }
                 $mgName = Read-Host "Enter Management Group name"
                 if ($mgName) {
                     Show-PolicyAssignments -ManagementGroupName $mgName
@@ -507,6 +549,10 @@ function Start-InteractiveMenu {
                 Read-Host "`nPress Enter to continue"
             }
             '4' {
+                if (-not (Confirm-AzureConnection)) {
+                    Read-Host "`nPress Enter to continue"
+                    continue
+                }
                 $mgName = Read-Host "Enter Management Group name"
                 if ($mgName) {
                     Show-PolicyCompliance -ManagementGroupName $mgName
@@ -514,14 +560,26 @@ function Start-InteractiveMenu {
                 Read-Host "`nPress Enter to continue"
             }
             '5' {
+                if (-not (Confirm-AzureConnection)) {
+                    Read-Host "`nPress Enter to continue"
+                    continue
+                }
                 Show-Subscriptions
                 Read-Host "`nPress Enter to continue"
             }
             '6' {
+                if (-not (Confirm-AzureConnection)) {
+                    Read-Host "`nPress Enter to continue"
+                    continue
+                }
                 Show-EAEnrollmentAccount
                 Read-Host "`nPress Enter to continue"
             }
             '7' {
+                if (-not (Confirm-AzureConnection)) {
+                    Read-Host "`nPress Enter to continue"
+                    continue
+                }
                 Write-Host "`n╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
                 Write-Host "║              DEPLOYMENT MODE SELECTION                           ║" -ForegroundColor Cyan
                 Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
@@ -556,6 +614,10 @@ function Start-InteractiveMenu {
                 Read-Host "`nPress Enter to return to menu"
             }
             '8' {
+                if (-not (Confirm-AzureConnection)) {
+                    Read-Host "`nPress Enter to continue"
+                    continue
+                }
                 $mgName = Read-Host "Enter Management Group name"
                 if ($mgName) {
                     Write-Host "`n  1. Preview only (WhatIf)" -ForegroundColor Yellow
@@ -572,6 +634,10 @@ function Start-InteractiveMenu {
                 Read-Host "`nPress Enter to continue"
             }
             '9' {
+                if (-not (Confirm-AzureConnection)) {
+                    Read-Host "`nPress Enter to continue"
+                    continue
+                }
                 $mgName = Read-Host "Enter root Management Group name to remove"
                 if ($mgName) {
                     Write-Host "`n  1. Preview only (WhatIf)" -ForegroundColor Yellow
