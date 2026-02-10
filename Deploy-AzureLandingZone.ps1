@@ -277,9 +277,9 @@ $Config = @{
                 Effect = "Audit"
             }
             
-            # Audit VMs without managed disks
+            # Audit VMs without managed disks (disabled - not needed for Fabric workloads)
             ManagedDisksForVMs = @{
-                Enabled = $true
+                Enabled = $false
                 Effect = "Audit"
             }
         }
