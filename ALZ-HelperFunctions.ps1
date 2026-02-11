@@ -69,8 +69,35 @@ function Test-Prerequisites {
     
     if ($missingModules.Count -gt 0) {
         Write-Host "Missing required modules: $($missingModules -join ', ')" -ForegroundColor Red
-        Write-Host "Install them using: Install-Module -Name <ModuleName> -Scope CurrentUser" -ForegroundColor Yellow
-        return $false
+        $response = Read-Host "Would you like to install them now? (Y/N)"
+        
+        if ($response -eq 'Y' -or $response -eq 'y') {
+            foreach ($module in $missingModules) {
+                Write-Host "Installing $module..." -ForegroundColor Cyan
+                try {
+                    Install-Module -Name $module -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
+                    Write-Host "✅ $module installed successfully." -ForegroundColor Green
+                }
+                catch {
+                    Write-Host "❌ Failed to install $module : $_" -ForegroundColor Red
+                    Write-Host "Try running PowerShell as Administrator or install manually." -ForegroundColor Yellow
+                    return $false
+                }
+            }
+            Write-Host "All modules installed. Importing..." -ForegroundColor Cyan
+            foreach ($module in $missingModules) {
+                Import-Module $module -ErrorAction SilentlyContinue
+            }
+        }
+        else {
+            Write-Host "Installation cancelled. Install manually using:" -ForegroundColor Yellow
+            Write-Host "  Install-Module -Name Az.Accounts -Scope CurrentUser" -ForegroundColor Gray
+            Write-Host "  Install-Module -Name Az.Resources -Scope CurrentUser" -ForegroundColor Gray
+            return $false
+        }
+    }
+    else {
+        Write-Host "✅ Required modules are installed." -ForegroundColor Green
     }
     
     # Check Azure connection (use the new function)
@@ -426,7 +453,7 @@ function Remove-ManagementGroupHierarchy {
         # Process children first (subscriptions and child MGs)
         if ($mg.Children) {
             foreach ($child in $mg.Children) {
-                if ($child.Type -eq "/subscriptions") {
+                if ($child.Type -like "*subscriptions*") {
                     # MOVE subscription to tenant root (subscriptions are NEVER deleted)
                     $subId = $child.Name
                     if ($WhatIf) {
@@ -443,7 +470,7 @@ function Remove-ManagementGroupHierarchy {
                         }
                     }
                 }
-                elseif ($child.Type -eq "/providers/Microsoft.Management/managementGroups") {
+                elseif ($child.Type -like "*managementGroups*") {
                     # Recursively remove child MG
                     Remove-MGRecursive -GroupName $child.Name
                 }
