@@ -158,7 +158,7 @@ $Config = @{
         LandingZones = @{
             FabricBU1 = @{
                 Name = "Fabric-BU1-Subscription"
-                SubscriptionId = $null  # Set to actual subscription ID or $null to create
+                SubscriptionId = "b8383a80-7a39-472f-89b8-4f0b6a53b266" #$null  # Set to actual subscription ID or $null to create
                 TargetMG = "Fabric-BU1"
                 CreateIfMissing = $true  # Will create this subscription if EA scope is configured
             }
@@ -294,7 +294,7 @@ $Config = @{
             
             # Require tags on resource groups
             RequireTagsOnRGs = @{
-                Enabled = $true
+                Enabled = $false
                 Tags = @("CostCenter", "Department")
             }
         }
