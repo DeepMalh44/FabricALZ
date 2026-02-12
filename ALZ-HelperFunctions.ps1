@@ -221,9 +221,12 @@ function Show-PolicyAssignments {
         Write-Host "Total Assignments: $($assignments.Count)`n" -ForegroundColor Gray
         
         foreach ($assignment in $assignments) {
-            Write-Host "  📋 $($assignment.Properties.DisplayName)" -ForegroundColor Green
+            $displayName = if ($assignment.DisplayName) { $assignment.DisplayName } else { $assignment.Name }
+            $policyDefId = if ($assignment.PolicyDefinitionId) { $assignment.PolicyDefinitionId.Split('/')[-1] } else { "N/A" }
+            
+            Write-Host "  📋 $displayName" -ForegroundColor Green
             Write-Host "     Name: $($assignment.Name)" -ForegroundColor Gray
-            Write-Host "     Policy: $($assignment.Properties.PolicyDefinitionId.Split('/')[-1])" -ForegroundColor Gray
+            Write-Host "     Policy: $policyDefId" -ForegroundColor Gray
             Write-Host ""
         }
     }
@@ -384,7 +387,7 @@ function Remove-PolicyAssignments {
     
     # Only get assignments directly at this scope (not inherited)
     $assignments = Get-AzPolicyAssignment -Scope $scope -ErrorAction SilentlyContinue | Where-Object {
-        $_.Properties.Scope -eq $scope
+        $_.Scope -eq $scope
     }
     
     if (-not $assignments -or $assignments.Count -eq 0) {
@@ -395,11 +398,12 @@ function Remove-PolicyAssignments {
     Write-Host "  Found $($assignments.Count) direct policy assignments." -ForegroundColor White
     
     foreach ($assignment in $assignments) {
+        $displayName = if ($assignment.DisplayName) { $assignment.DisplayName } else { $assignment.Name }
         if ($WhatIf) {
-            Write-Host "  [WhatIf] Would remove: $($assignment.Properties.DisplayName)" -ForegroundColor Yellow
+            Write-Host "  [WhatIf] Would remove: $displayName" -ForegroundColor Yellow
         }
         else {
-            Write-Host "  Removing: $($assignment.Properties.DisplayName)..." -ForegroundColor Cyan
+            Write-Host "  Removing: $displayName..." -ForegroundColor Cyan
             try {
                 Remove-AzPolicyAssignment -Name $assignment.Name -Scope $scope -ErrorAction Stop
                 Write-Host "    Removed." -ForegroundColor Green
