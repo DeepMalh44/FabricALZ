@@ -129,52 +129,62 @@ function Show-ManagementGroupHierarchy {
     Write-Host "║              MANAGEMENT GROUP HIERARCHY                          ║" -ForegroundColor Cyan
     Write-Host "╚══════════════════════════════════════════════════════════════════╝`n" -ForegroundColor Cyan
     
-    function Get-MGChildren {
+    function Show-MGTree {
         param(
-            [string]$ParentId,
+            [object]$MGNode,
             [int]$Level = 0
         )
         
         $indent = "  " * $Level
-        $children = Get-AzManagementGroup | Where-Object { 
-            $_.ParentId -eq $ParentId -or 
-            $_.ParentDisplayName -eq $ParentId -or
-            $_.ParentName -eq $ParentId
-        }
         
-        foreach ($child in $children) {
-            $icon = if ($Level -eq 0) { "📁" } else { "├── 📂" }
-            Write-Host "$indent$icon $($child.DisplayName) [$($child.Name)]" -ForegroundColor White
-            
-            # Get subscriptions under this MG
-            try {
-                $subs = Get-AzManagementGroupSubscription -GroupName $child.Name -ErrorAction SilentlyContinue
-                foreach ($sub in $subs) {
-                    Write-Host "$indent    └── 🔑 $($sub.DisplayName)" -ForegroundColor Yellow
+        # Display children
+        if ($MGNode.Children) {
+            foreach ($child in $MGNode.Children) {
+                if ($child.Type -like "*subscriptions*") {
+                    # This is a subscription
+                    Write-Host "$indent└── 🔑 $($child.DisplayName)" -ForegroundColor Yellow
+                }
+                elseif ($child.Type -like "*managementGroups*") {
+                    # This is a management group
+                    Write-Host "$indent├── 📂 $($child.DisplayName) [$($child.Name)]" -ForegroundColor White
+                    # Recurse into children
+                    Show-MGTree -MGNode $child -Level ($Level + 1)
                 }
             }
-            catch {}
-            
-            Get-MGChildren -ParentId $child.Id -Level ($Level + 1)
         }
     }
     
-    # Get tenant root
-    $tenantRoot = Get-AzManagementGroup | Where-Object { $_.ParentId -eq $null }
-    
-    if ($RootGroupName) {
-        $startMG = Get-AzManagementGroup -GroupName $RootGroupName -ErrorAction SilentlyContinue
-        if ($startMG) {
-            Write-Host "📁 $($startMG.DisplayName) [$($startMG.Name)]" -ForegroundColor Cyan
-            Get-MGChildren -ParentId $startMG.Id -Level 1
+    try {
+        if ($RootGroupName) {
+            # Start from specified management group
+            $rootMG = Get-AzManagementGroup -GroupName $RootGroupName -Expand -Recurse -ErrorAction Stop
+            if ($rootMG) {
+                Write-Host "📁 $($rootMG.DisplayName) [$($rootMG.Name)]" -ForegroundColor Cyan
+                Show-MGTree -MGNode $rootMG -Level 1
+            }
+            else {
+                Write-Host "Management Group '$RootGroupName' not found." -ForegroundColor Red
+            }
         }
         else {
-            Write-Host "Management Group '$RootGroupName' not found." -ForegroundColor Red
+            # Find tenant root (the one with no parent)
+            $allMGs = Get-AzManagementGroup
+            $tenantRootName = ($allMGs | ForEach-Object { 
+                Get-AzManagementGroup -GroupName $_.Name -ErrorAction SilentlyContinue 
+            } | Where-Object { $_.ParentId -eq $null } | Select-Object -First 1).Name
+            
+            if ($tenantRootName) {
+                $rootMG = Get-AzManagementGroup -GroupName $tenantRootName -Expand -Recurse -ErrorAction Stop
+                Write-Host "📁 $($rootMG.DisplayName) [$($rootMG.Name)]" -ForegroundColor Cyan
+                Show-MGTree -MGNode $rootMG -Level 1
+            }
+            else {
+                Write-Host "Could not find tenant root management group." -ForegroundColor Red
+            }
         }
     }
-    else {
-        Write-Host "📁 Tenant Root Group" -ForegroundColor Cyan
-        Get-MGChildren -ParentId $tenantRoot.Id -Level 1
+    catch {
+        Write-Host "Error retrieving Management Group hierarchy: $_" -ForegroundColor Red
     }
     
     Write-Host ""
