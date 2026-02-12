@@ -108,9 +108,9 @@ $Config = @{
             Name = "LandingZones"
             DisplayName = "Landing zones"
             Children = @(
-                @{ Name = "Fabric-BU1"; DisplayName = "Fabric BU1" },
-                @{ Name = "Fabric-BU2"; DisplayName = "Fabric BU2" },
-                @{ Name = "Fabric-BU3"; DisplayName = "Fabric BU3" }
+                @{ Name = "Fabric-BU1"; DisplayName = "Fabric BU1" }
+                # @{ Name = "Fabric-BU2"; DisplayName = "Fabric BU2" },
+                # @{ Name = "Fabric-BU3"; DisplayName = "Fabric BU3" }
             )
         }
     }
@@ -162,18 +162,18 @@ $Config = @{
                 TargetMG = "Fabric-BU1"
                 CreateIfMissing = $true  # Will create this subscription if EA scope is configured
             }
-            FabricBU2 = @{
-                Name = "Fabric-BU2-Subscription"
-                SubscriptionId = $null
-                TargetMG = "Fabric-BU2"
-                CreateIfMissing = $true
-            }
-            FabricBU3 = @{
-                Name = "Fabric-BU3-Subscription"
-                SubscriptionId = $null
-                TargetMG = "Fabric-BU3"
-                CreateIfMissing = $true
-            }
+            # FabricBU2 = @{
+            #     Name = "Fabric-BU2-Subscription"
+            #     SubscriptionId = $null
+            #     TargetMG = "Fabric-BU2"
+            #     CreateIfMissing = $true
+            # }
+            # FabricBU3 = @{
+            #     Name = "Fabric-BU3-Subscription"
+            #     SubscriptionId = $null
+            #     TargetMG = "Fabric-BU3"
+            #     CreateIfMissing = $true
+            # }
         }
     }
     
